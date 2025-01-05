@@ -22,12 +22,29 @@ export const register = async (req, res) => {
     });
 
     await user.save();
+
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
       expiresIn: "15d",
     });
 
-    res.cookie("jwt", token, { httpOnly: true, sameSite: "lax" });
-    res.status(201).json({ message: "User registered", user });
+    // Set secure, HTTP-only cookie
+    res.cookie("jwt", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "Lax",
+      path: "/", // Cookie available across entire site
+      maxAge: 15 * 24 * 60 * 60 * 1000, // 15 days
+    });
+
+    res.status(201).json({
+      message: "User registered successfully",
+      user: {
+        _id: user._id,
+        fullName: user.fullName,
+        username: user.username,
+        email: user.email,
+      },
+    });
   } catch (error) {
     console.error("Error in registration:", error);
     res.status(500).json({ error: "Internal Server Error" });
@@ -39,23 +56,51 @@ export const login = async (req, res) => {
   const { username, password } = req.body;
   try {
     const user = await User.findOne({ username });
-    const isValid = await bcrypt.compare(password, user?.password || "");
+    if (!user) {
+      return res.status(400).json({ error: "Invalid username or password" });
+    }
 
-    if (!user || !isValid) {
-      return res.status(400).json({ error: "Invalid credentials" });
+    const isValid = await bcrypt.compare(password, user.password);
+    if (!isValid) {
+      return res.status(400).json({ error: "Invalid username or password" });
     }
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
       expiresIn: "15d",
     });
-    res.cookie("jwt", token, { httpOnly: true, sameSite: "lax" });
-    res.json(user);
+
+    // Set cookie on login
+    res.cookie("jwt", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "Lax",
+      path: "/",
+      maxAge: 15 * 24 * 60 * 60 * 1000,
+    });
+
+    res.json({
+      message: "Login successful",
+      user: {
+        _id: user._id,
+        fullName: user.fullName,
+        username: user.username,
+        email: user.email,
+      },
+    });
   } catch (error) {
+    console.error("Error during login:", error);
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
+// User Logout
 export const logout = (req, res) => {
-  res.cookie("jwt", "", { maxAge: 0 }); // Clear JWT by setting an expired cookie
+  res.cookie("jwt", "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "Lax",
+    path: "/",
+    maxAge: 0,
+  });
   res.status(200).json({ message: "Logged out successfully" });
 };
